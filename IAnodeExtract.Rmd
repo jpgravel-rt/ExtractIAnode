@@ -1,0 +1,122 @@
+---
+title: "Pexlib Extraction Demo"
+output: html_notebook
+---
+
+```{r Initialization}
+library(reticulate)
+library(dplyr)
+library(lubridate)
+library(sparklyr)
+
+source("src/helper.R")
+
+pexlib <- import("pexlib")
+
+req <- import("requests")
+req$packages$urllib3$disable_warnings() 
+rm(req)
+
+```
+
+
+
+```{r Multi-tags}
+client = pexlib$Client(
+  "https://casagszwebpi1.corp.riotinto.org/piwebapi/",
+  "CORP\\crda.courtoisie",
+  "#:3EmSY/4wKDfRBurD"                # Change me!
+)
+
+sc <- ConnectToSpark()
+sdf_sql(sc, "USE reduction")
+
+tryCatch({
+  tags <- readLines("data/points-AAR.txt") %>%
+    c(readLines("data/points-ALM.txt"))
+  tag_count <- length(tags)
+  
+  i <- 0
+  client$open()
+  
+  extracted_data <- lapply(tags, function(tag) {
+    i <<- i + 1
+    print(paste0("[", i, "/", tag_count, "] ", tag))
+    values <- pexlib$extractor$extract_dataframe(client, tag,
+      start_time    = "2021-02-03 15:00:00-05:00",
+      end_time      = "2021-02-04 15:00:00-05:00",
+      sync_time     = "2021-02-03 15:00:00-05:00",
+      interval      = "1s",
+      stream        = "Recorded")
+    sdf_copy_to(sc, 
+                values, 
+                paste0("ianode_import_", as.character(i)), 
+                overwrite = TRUE)
+  }) %>% 
+    sdf_bind_rows()
+  
+  aar_data <- extracted_data %>%
+    filter(substr(tag, 1, 3) == "AAR") %>%
+    transmute(ts,
+              kind = ifelse(right(tag, 8) == "VCUVE.PV", "v",
+                            ifelse(right(tag, 7) == "IMFC.PV", "i",
+                                   paste0("iano", substr(tag,22, 23)))),
+              val = numval,
+              pot = ifelse(right(tag, 7) == "IMFC.PV",
+                           substr(tag, 15, 18),
+                           ifelse(substr(tag, 11, 11) == "A", 
+                                  paste0("1", substr(tag, 12, 14)), 
+                                  paste0("2", substr(tag, 12, 14)))),
+              year = year(ts),
+              month = month(ts)) %>%
+    sdf_pivot(pot + year + month + ts ~ kind, fun.aggregate = first())
+     
+          
+  alm_data <- extracted_data %>%
+    filter(substr(tag, 1, 3) == "ALM") %>%
+    transmute(ts,
+              kind = ifelse(right(tag, 8) == "VCUVE.PV", "v",
+                            ifelse(right(tag, 7) == "IMFC.PV", "i",
+                                   paste0("iano", substr(tag,23, 24)))),
+              val = numval,
+              pot = ifelse(right(tag, 7) == "IMFC.PV",
+                           substr(tag, 16, 19),
+                           substr(tag, 12, 15)),
+              year = year(ts),
+              month = month(ts)) %>%
+    sdf_pivot(pot + year + month + ts ~ kind, fun.aggregate = first())
+    
+  
+  
+},
+finally = {
+  client$close()
+  spark_disconnect(sc)
+  spark_disconnect_all()
+})
+
+attr(df2$ts, "tzone") <- "America/Toronto"  
+
+df2 %>% 
+  group_by(tag) %>%
+  summarise(from=min(ts), to=max(ts), count=n(), avg=mean(numval), stddev=sd(numval))
+```
+
+
+Rpartition
+```{r}
+# sdf_sql(sc, "USE reduction")
+# spark_read_table(sc, "aar_ianode_1s") %>%
+#   transmute(pot, year, month, ts, 
+#             iano01, iano02, iano03, iano04, iano05, iano06, iano07, iano08, iano09, iano10, iano11, 
+#             iano12, iano13, iano14, iano15, iano16, iano17, iano18, iano19, iano20, iano21, iano22,
+#             iano23, iano24, i, v) %>%
+#   spark_write_table("aar_ianode_1s_2", partition_by = c("pot", "year", "month"))
+# sdf_sql("ALTER TABLE aar_ianode_1s RENAME TO aar_ianode_1s_tmp")
+# sdf_sql("ALTER TABLE aar_ianode_1s_2 RENAME TO aar_ianode_1s")
+#sdf_sql("DROP TABLE aar_ianode_1s_tmp")
+
+```
+
+
+
