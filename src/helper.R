@@ -1,5 +1,17 @@
 library(synchronicity)
 
+
+
+left <- function(str, len) {
+  return(substr(str, 1, len))
+}
+
+
+right <- function(str, len) {
+  return(substr(str, nchar(str) - len + 1, nchar(str)))
+}
+
+
 attachMutex <- function(name, timeout = 5) {
   exists <- file.exists(paste0("/dev/shm/", name))
   mutex <- NULL
@@ -246,8 +258,14 @@ ConnectToSpark = function(database = "default"){
   config$`sparklyr.shell.executor-cores`      = "1"      #Default 1 in Yarn, all the available cores on the worker in standalone. The number of cores to use on each executor.
   config$`sparklyr.shell.num-executors`       = "1"      #Default 1 in Yarn, all the available cores on the worker in standalone. The number of cores to use on each executor.
   config$`spark.kryoserializer.buffer.max.mb` = "512"
-  #config$`hive.exec.dynamic.partition.mode`   = "nonstrict"
+  config$`spark.sql.execution.arrow.enabled`  = TRUE
   
+
   #Connect
   sc = spark_connect(master = "yarn", app_name = paste0("sparklyr-", Sys.getenv("USER")), config = config)
+  if (database != "default") {
+    tbl_change_db(sc, database)
+  }
+  
+  return(sc)
 }
