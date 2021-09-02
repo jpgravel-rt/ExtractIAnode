@@ -111,6 +111,15 @@ Rpartition
 #   spark_write_table("ianode_1s", mode = "append")
 
 
+
+# arvida
+spark_read_table(sc, "aar_ianode_1s") %>%
+  transmute(ts,
+            iano01, iano02, iano03, iano04, iano05, iano06, iano07, iano08, iano09, iano10,
+            iano11, iano12, iano13, iano14, iano15, iano16, iano17, iano18, iano19, iano20,
+            iano21, iano22, iano23, iano24, i, v, plant="AAR", pot, year, month) %>%
+  spark_write_table("ianode_1s", mode = "append")
+
 ```
 
 

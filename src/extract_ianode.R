@@ -67,11 +67,6 @@ get_max_ts_per_pot <- function(sc, plant, tags) {
 }
 
 
-get_creation_dates <- function(tags, client) {
-  pexlib$extractor$update_creation_date
-}
-
-
 create_intervals <- function(plant_max_ts, plant_tags, nday) {
   plant_max_ts %>%
     inner_join(plant_tags, by = "pot") %>%
