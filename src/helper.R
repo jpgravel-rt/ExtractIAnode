@@ -2,16 +2,6 @@ library(synchronicity)
 
 
 
-left <- function(str, len) {
-  return(substr(str, 1, len))
-}
-
-
-right <- function(str, len) {
-  return(substr(str, nchar(str) - len + 1, nchar(str)))
-}
-
-
 attachMutex <- function(name, timeout = 5) {
   exists <- file.exists(paste0("/dev/shm/", name))
   mutex <- NULL
@@ -264,8 +254,16 @@ ConnectToSpark = function(database = "default"){
   #Connect
   sc = spark_connect(master = "yarn", app_name = paste0("sparklyr-", Sys.getenv("USER")), config = config)
   if (database != "default") {
-    tbl_change_db(sc, database)
+    sdf_sql(sc, paste("USE", database))
   }
+  
+  sdf_sql(sc,"SET hive.exec.dynamic.partition.mode = nonstrict")
+  sdf_sql(sc,"SET hive.merge.mapfiles = true")
+  sdf_sql(sc,"SET hive.merge.mapredfiles = true")
+  sdf_sql(sc,"SET hive.merge.size.per.task = 256000000")
+  sdf_sql(sc,"SET hive.merge.smallfiles.avgsize = 134217728")
+  sdf_sql(sc,"SET hive.exec.compress.output = true")
+  sdf_sql(sc,"SET parquet.compression = snappy")
   
   return(sc)
 }
