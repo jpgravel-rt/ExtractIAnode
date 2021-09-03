@@ -48,20 +48,21 @@ get_tags <- function(plant) {
 }
 
 
-get_max_ts_per_pot <- function(sc, plant, tags) {
-  plant_ianode_1s <- tbl(sc, "ianode_1s")
+get_max_ts_per_pot <- function(sc, plant_code, tags) {
+  plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
+    filter(plant == plant_code)
   print("Get the most recent timestamp for each pot.")
   plant_ianode_1s %>%
-    filter(plant == plant) %>%
-    select(pot, year, month) %>%
-    group_by(pot, year) %>%
+    select(plant, pot, year, month) %>%
+    group_by(plant, pot, year) %>%
     summarise(month = max(month, na.rm = T)) %>%
     slice_max(year) %>%
-    inner_join(plant_ianode_1s, by = c("pot", "year", "month")) %>%
-    select(pot, ts) %>%
-    group_by(pot) %>%
+    inner_join(plant_ianode_1s, by = c("plant", "pot", "year", "month")) %>%
+    select(plant, pot, ts) %>%
+    group_by(plant, pot) %>%
     summarize(max_ts = max(ts, na.rm = T)) %>%
     mutate(pot = as.character(as.integer(pot))) %>%
+    select(pot, max_ts) %>%
     arrange(pot) %>%
     collect()
 }
@@ -71,7 +72,7 @@ create_intervals <- function(plant_max_ts, plant_tags, nday) {
   plant_max_ts %>%
     inner_join(plant_tags, by = "pot") %>%
     mutate(start_time = max_ts + dseconds(1),
-           end_time = start_time + ddays(nday),
+           end_time = (floor_date(start_time + ddays(nday), "day")),
            sync_time = start_time) %>%
     select(-max_ts) %>%
     arrange(pot, tag)

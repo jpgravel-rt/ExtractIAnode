@@ -33,13 +33,24 @@ sc <<- ConnectToSpark("reduction")
 
 tryCatch({
   
+  extraction_time_limit <- today()
   plants <- c("AAR", "ALM")
-  plant <- "ALM"
   
-  plant_tags <- get_tags(plant)
-  plant_max_ts <- get_max_ts_per_pot(sc, plant)
-  extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1)
-  extract_ianode(plant, extraction_intervals)
+  lapply(plants, function(plant){
+    
+    plant_tags <- get_tags(plant)
+    plant_max_ts <- get_max_ts_per_pot(sc, plant, plant_tags) %>%
+      filter(max_ts < extraction_time_limit)
+    extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1)
+    extract_ianode(plant, extraction_intervals)
+    
+    # returns the earliest end time
+    extraction_intervals %>%
+      select(end_time) %>%
+      summarize(end_time = min(end_time))
+  }) %>%
+    bind_rows() %>%
+    summarize(end_time = min(end_time))
   
 },
 finally = {
@@ -51,76 +62,6 @@ finally = {
 ```
 
 
-Rpartition
-```{r}
-# sdf_sql(sc, "USE reduction")
-# 
-# sdf_sql(sc, "SET hive.merge.mapfiles = true")
-# sdf_sql(sc, "SET hive.merge.mapredfiles = true")
-# sdf_sql(sc, "SET hive.merge.size.per.task = 256000000")
-# sdf_sql(sc, "SET hive.merge.smallfiles.avgsize = 134217728")
-# sdf_sql(sc, "SET hive.exec.compress.output = true")
-# sdf_sql(sc, "SET hive.exec.dynamic.partition.mode = nonstrict")
-# sdf_sql(sc, "SET parquet.compression = snappy")
-# sdf_sql(sc, "CREATE TABLE reduction.aar_ianode_1s_2 LIKE reduction.aar_ianode_1s")
-# 
-# spark_read_table(sc, "aar_ianode_1s") %>%
-#   spark_write_table("aar_ianode_1s_2", 
-#                     partition_by = c("pot", "year", "month"),
-#                     mode = "overwrite")
-# 
-# sdf_sql(sc, "ALTER TABLE aar_ianode_1s RENAME TO aar_ianode_1s_tmp")
-# sdf_sql(sc, "ALTER TABLE aar_ianode_1s_2 RENAME TO aar_ianode_1s")
-# sdf_sql(sc, "DROP TABLE aar_ianode_1s_tmp")
-
-
-# alma
-# spark_read_table(sc, "alma_ianode_1s") %>%
-#   transmute(
-#     ts = date,
-#     iano01 = iano1,
-#     iano02 = iano2,
-#     iano03 = iano3,
-#     iano04 = iano4,
-#     iano05 = iano5,
-#     iano06 = iano6,
-#     iano07 = iano7,
-#     iano08 = iano8,
-#     iano09 = iano9,
-#     iano10 = iano10,
-#     iano11 = iano11,
-#     iano12 = iano12,
-#     iano13 = iano13,
-#     iano14 = iano14,
-#     iano15 = iano15,
-#     iano16 = iano16,
-#     iano17 = iano17,
-#     iano18 = iano18,
-#     iano19 = iano19,
-#     iano20 = iano20,
-#     iano21 = NA,
-#     iano22 = NA,
-#     iano23 = NA,
-#     iano24 = NA,
-#     i = ipot,
-#     v = vpot,
-#     plant = "ALM",
-#     pot,
-#     year,
-#     month) %>%
-#   spark_write_table("ianode_1s", mode = "append")
-
-
-
-# arvida
-spark_read_table(sc, "aar_ianode_1s") %>%
-  transmute(ts,
-            iano01, iano02, iano03, iano04, iano05, iano06, iano07, iano08, iano09, iano10,
-            iano11, iano12, iano13, iano14, iano15, iano16, iano17, iano18, iano19, iano20,
-            iano21, iano22, iano23, iano24, i, v, plant="AAR", pot, year, month) %>%
-  spark_write_table("ianode_1s", mode = "append")
-
-```
 
 
 
