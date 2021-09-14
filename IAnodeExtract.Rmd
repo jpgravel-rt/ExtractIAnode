@@ -34,23 +34,32 @@ sc <<- ConnectToSpark("reduction")
 tryCatch({
   
   extraction_time_limit <- today()
-  plants <- c("AAR", "ALM")
+  plants <- c("AAR")#, "ALM")
+
+  last_date = as.POSIXct("2000-01-01")
   
-  lapply(plants, function(plant){
-    
-    plant_tags <- get_tags(plant)
-    plant_max_ts <- get_max_ts_per_pot(sc, plant, plant_tags) %>%
-      filter(max_ts < extraction_time_limit)
-    extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1)
-    extract_ianode(plant, extraction_intervals)
-    
-    # returns the earliest end time
-    extraction_intervals %>%
-      select(end_time) %>%
+  while (last_date < extraction_time_limit) {
+    last_date_df <- lapply(plants, function(plant){
+
+      plant_tags <- get_tags(plant)
+      plant_max_ts <- get_max_ts_per_pot(sc, plant, plant_tags) %>%
+        filter(max_ts < extraction_time_limit)
+      
+      from_dates <- plant_max_ts %>% select(pot, max_ts) %>% distinct() %>% arrange()
+      print(paste(plant, from_dates$pot, from_dates$max_ts))
+
+      extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1)
+      extract_ianode(plant, extraction_intervals)
+      
+      # returns the earliest end time
+      extraction_intervals %>%
+        transmute(plant=plant, end_time) %>%
+        summarize(end_time = min(end_time))
+    }) %>%
+      bind_rows() %>%
       summarize(end_time = min(end_time))
-  }) %>%
-    bind_rows() %>%
-    summarize(end_time = min(end_time))
+    last_date <- last_date_df$end_time
+  }
   
 },
 finally = {

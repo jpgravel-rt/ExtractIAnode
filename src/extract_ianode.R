@@ -62,9 +62,11 @@ get_max_ts_per_pot <- function(sc, plant_code, tags) {
     group_by(plant, pot) %>%
     summarize(max_ts = max(ts, na.rm = T)) %>%
     mutate(pot = as.character(as.integer(pot))) %>%
-    select(pot, max_ts) %>%
     arrange(pot) %>%
-    collect()
+    collect() %>%
+    select(pot, max_ts) %>% # TODO: Shall not need to select and summarize again, fix that!
+    group_by(pot) %>%
+    summarize(max_ts = max(max_ts))
 }
 
 
@@ -111,11 +113,14 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   
   print(paste0("Extraction for pot ", pot, "."))
   
-  pot_data <- lapply(pot_tags$path, function(tag_path) {
-    row <- pot_tags[tag_path,]
-    i <<- i + 1
-    print(paste0("[", i, "/", tag_count, "] ", tag_path))
-    pexlib$extractor$extract_dataframe(
+  rowcount <- 0
+  while (rowcount == 0 && pot_tags$end_time[[1]] <= today()) {
+    
+    pot_data <- lapply(pot_tags$path, function(tag_path) {
+      row <- pot_tags[tag_path,]
+      i <<- i + 1
+      print(paste0("[", i, "/", tag_count, "] ", tag_path))
+      pexlib$extractor$extract_dataframe(
         client,
         tag_path,
         start_time = as.character(row$start_time),
@@ -123,10 +128,18 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
         sync_time  = as.character(row$sync_time),
         interval   = "1s",
         stream     = "Recorded") %>%
-      mutate(ts = as.POSIXct(ts))
-  }) %>%
-    bind_rows() %>%
-    select(-strval)
+        mutate(ts = as.POSIXct(ts))
+    }) %>%
+      bind_rows() %>%
+      select(-strval)
+    
+    rowcount <- nrow(pot_data)
+    if (rowcount == 0) {
+      i <<- 0
+      pot_tags <- pot_tags %>% mutate(end_time = end_time + ddays(1))
+      print(paste("No data, increment end_time to", pot_tags$end_time[[1]]))
+    }
+  }
   
   # add dummy data to make sure all columns are created during pivot.
   placeholder_ts <- (pot_tags %>% head(1))$start_time - dseconds(1)
@@ -139,7 +152,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   # make the pivot
   print(paste0("Pivoting pot ", pot, " data."))
   pivoted_pot_data <- pot_data %>% 
-    inner_join(plant_tags, by = "tag") %>% 
+    inner_join(pot_tags, by = "tag") %>% 
     transmute(pot, 
               year = as.integer(year(ts)), 
               month = as.integer(month(ts)), 
@@ -180,7 +193,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   
   
   pot_count <<- pot_count + 1
-  if (pot_count %% 10 == 0) {
+  if (pot_count %% 8 == 0) {
     print("Refresh spark session.")
     spark_disconnect(sc)
     sc <<- ConnectToSpark("reduction")
