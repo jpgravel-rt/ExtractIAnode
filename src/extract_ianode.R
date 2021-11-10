@@ -48,7 +48,7 @@ get_tags <- function(plant) {
 }
 
 
-get_max_ts_per_pot <- function(sc, plant_code, tags) {
+get_max_ts_per_pot <- function(sc, plant_code) {
   plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
     filter(plant == plant_code)
   print("Get the most recent timestamp for each pot.")
@@ -67,6 +67,22 @@ get_max_ts_per_pot <- function(sc, plant_code, tags) {
     select(pot, max_ts) %>% # TODO: Shall not need to select and summarize again, fix that!
     group_by(pot) %>%
     summarize(max_ts = max(max_ts))
+}
+
+
+get_plants_lag_time <- function() {
+  ianodes <- tbl(sc, "ianode_1s")
+  result <- ianodes %>%
+    select(plant, pot, year, month) %>%
+    group_by(plant, pot, year) %>%
+    summarise(month = max(month, na.rm = T)) %>%
+    slice_max(year) %>%
+    inner_join(ianodes, by = c("plant", "pot", "year", "month")) %>%
+    select(plant, ts) %>%
+    group_by(plant) %>%
+    summarize(max_ts = max(ts, na.rm = T)) %>%
+    collect()
+  return(result)
 }
 
 
@@ -105,16 +121,19 @@ extract_ianode <- function(plant, extraction_intervals) {
 
 extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   
+  
+  
   i <<- 0
   pot <- .y$pot
   pot_tags <- as.data.frame(.x)
   tag_count <- nrow(pot_tags)
   rownames(pot_tags) <- pot_tags$path
   
-  print(paste0("Extraction for pot ", pot, "."))
-  
   rowcount <- 0
-  while (rowcount == 0 && pot_tags$end_time[[1]] <= today()) {
+  while (rowcount == 0 && nrow(pot_tags) > 0 && pot_tags$end_time[[1]] <= today()) {
+    
+    print(paste0("Extraction for pot ", pot, "; From ", pot_tags$start_time[[1]], " to ", 
+                 pot_tags$end_time[[1]]))
     
     pot_data <- lapply(pot_tags$path, function(tag_path) {
       row <- pot_tags[tag_path,]

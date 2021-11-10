@@ -1,7 +1,6 @@
 library(synchronicity)
 
 
-
 attachMutex <- function(name, timeout = 5) {
   exists <- file.exists(paste0("/dev/shm/", name))
   mutex <- NULL
@@ -13,6 +12,7 @@ attachMutex <- function(name, timeout = 5) {
   }
   return(mutex)
 }
+
 
 #' Release a mutex by name or by mutex instance.
 #' 
