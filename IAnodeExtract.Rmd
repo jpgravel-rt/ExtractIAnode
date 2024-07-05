@@ -1,9 +1,11 @@
 ---
 title: "Pexlib Extraction Demo"
 output: html_notebook
+resource_files:
+- requirements.txt
 ---
 
-```{r Initialization, message=FALSE, warning=FALSE}
+```{r Initialization, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 library(reticulate)
 library(dplyr)
 library(lubridate)
@@ -23,7 +25,7 @@ rm(req)
 
 
 
-```{r Multi-tags}
+```{r Multi-tags, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 client <- pexlib$Client(
   "https://casagszwebpi1.corp.riotinto.org/piwebapi/",
   "CORP\\crda.courtoisie",
