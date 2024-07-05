@@ -1,0 +1,14 @@
+name: ianodeextract
+title: IAnodeExtract
+username: jpgravel
+account: jpgravel
+server: casagaprstd1
+hostUrl: https://casagaprstd1/__api__
+appId: 516
+bundleId: 3108
+url: https://casagaprstd1:443/content/b3e81906-86a6-414f-8eac-f53dea0ac97e/
+when: 1639058562.95384
+lastSyncTime: 1639058562.95387
+asMultiple: FALSE
+asStatic: FALSE
+additionalFiles: requirements.txt
