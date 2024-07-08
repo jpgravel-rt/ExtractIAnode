@@ -7,8 +7,6 @@ library(tidyr)
 source("src/helper.R")
 source("src/extract_ianode.R")
 
-
-
 pexlib <- import("pexlib")
 req <- import("requests")
 req$packages$urllib3$disable_warnings() 
@@ -25,16 +23,9 @@ sc <<- ConnectToSpark("reduction")
 
 tryCatch({
   
-  print("Evaluate the lag time of each plant.")
-  extraction_time_limit <- as.POSIXct(today())
-  plants <- data.frame(plant = c("AAR", "ALM"))
-  plants_lag_time <- get_plants_lag_time() %>%
-    full_join(plants, by = "plant") %>%
-    replace_na(list(max_ts = as.POSIXct("2019-01-01"))) %>%
-    filter((extraction_time_limit - max_ts) >= ddays(1))
-  
+  extract_intervals <- get_extract_interval(sc)
   print("List of plants and their lag. Up to date plants are not shown.")
-  print(plants_lag_time)
+  print(extract_intervals)
   
   if (count(plants_lag_time) > 0) {
     last_date <- plants_lag_time$max_ts %>% min()
