@@ -23,37 +23,58 @@ sc <<- ConnectToSpark("reduction")
 
 tryCatch({
   
-  extract_intervals <- get_extract_interval(sc)
+  extract_intervals <- get_extract_intervals(sc, 7)
   print("List of plants and their lag. Up to date plants are not shown.")
-  print(extract_intervals)
   
-  if (count(plants_lag_time) > 0) {
-    last_date <- plants_lag_time$max_ts %>% min()
-    while (extraction_time_limit - last_date > dseconds(1)) {
-      last_date_df <- lapply(plants_lag_time$plant, function(plant) {
-        plant_max_ts <- get_max_ts_per_pot(sc, plant) %>%
-          filter((extraction_time_limit - max_ts) >= ddays(1))
-        
-        from_dates <- plant_max_ts %>% select(pot, max_ts) %>% distinct() %>% arrange()
-        print(paste(plant, from_dates$pot, from_dates$max_ts))
-        
-        plant_tags <- get_tags(plant)
-        extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1) %>%
-          filter(end_time <= extraction_time_limit)
-        
-        print(system.time({
-          extract_ianode(plant, extraction_intervals)
-        }))
-        
-        # returns the earliest end time
-        extraction_intervals %>%
-          transmute(plant=plant, end_time) %>%
-          summarize(end_time = min(end_time))
-      }) %>%
-        bind_rows() %>%
-        summarize(end_time = min(end_time))
-      last_date <- last_date_df$end_time
-    }
+  all_tags <- get_tags("ALM") %>%
+    bind_rows(get_tags("AAR"))
+  
+  all_intervals <- extract_intervals %>%
+    inner_join(all_tags, by = "plant") %>%
+    arrange(date_start, plant, pot) %>%
+    mutate(sync_time = start_time)
+  
+  if (count(all_intervals) > 0) {
+    apply(all_intervals, 1, function(interval) {
+      print(interval)
+      stop("asdasd")
+      
+      
+      print(system.time({
+        extract_ianode(interval$plant, interval)
+      }))
+    }) %>% invisible()
+    
+    
+    
+    
+    
+    # last_date <- plants_lag_time$max_ts %>% min()
+    # while (extraction_time_limit - last_date > dseconds(1)) {
+    #   last_date_df <- lapply(plants_lag_time$plant, function(plant) {
+    #     plant_max_ts <- get_max_ts_per_pot(sc, plant) %>%
+    #       filter((extraction_time_limit - max_ts) >= ddays(1))
+    #     
+    #     from_dates <- plant_max_ts %>% select(pot, max_ts) %>% distinct() %>% arrange()
+    #     print(paste(plant, from_dates$pot, from_dates$max_ts))
+    #     
+    #     plant_tags <- get_tags(plant)
+    #     extraction_intervals <- create_intervals(plant_tags, plant_max_ts, 1) %>%
+    #       filter(end_time <= extraction_time_limit)
+    #     
+    #     print(system.time({
+    #       extract_ianode(plant, extraction_intervals)
+    #     }))
+    #     
+    #     # returns the earliest end time
+    #     extraction_intervals %>%
+    #       transmute(plant=plant, end_time) %>%
+    #       summarize(end_time = min(end_time))
+    #   }) %>%
+    #     bind_rows() %>%
+    #     summarize(end_time = min(end_time))
+    #   last_date <- last_date_df$end_time
+    # }
   }
   
 },

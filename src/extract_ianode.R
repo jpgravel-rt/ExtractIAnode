@@ -1,6 +1,5 @@
 library(dplyr)
 library(lubridate)
-library(data.table)
 
 
 
@@ -49,6 +48,17 @@ get_tags <- function(plant) {
 }
 
 
+create_intervals <- function(plant_max_ts, plant_tags, nday) {
+  plant_max_ts %>%
+    inner_join(plant_tags, by = "pot") %>%
+    mutate(start_time = max_ts + dseconds(1),
+           end_time = (floor_date(start_time + ddays(nday), "day")),
+           sync_time = start_time) %>%
+    select(-max_ts) %>%
+    arrange(pot, tag)
+}
+
+
 get_max_ts_per_pot <- function(sc, plant_code) {
   plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
     filter(plant == plant_code)
@@ -71,59 +81,40 @@ get_max_ts_per_pot <- function(sc, plant_code) {
 }
 
 
-get_plants_lag_time <- function() {
-  ianodes <- tbl(sc, "ianode_1s")
-  result <- ianodes %>%
-    select(plant, pot, year, month) %>%
-    group_by(plant, pot, year) %>%
-    summarise(month = max(month, na.rm = T)) %>%
-    slice_max(year) %>%
-    inner_join(ianodes, by = c("plant", "pot", "year", "month")) %>%
-    select(plant, ts) %>%
-    group_by(plant) %>%
-    summarize(max_ts = max(ts, na.rm = T)) %>%
-    collect()
-  return(result)
-}
 
 
-get_extract_interval <- function(sc, plants = c("AAR", "ALM")) {
-  requested_plants <- data.frame(plant = plants) %>%
-    mutate(default_to_date = as.POSIXct(today())) %>%
-    copy_to(sc, ., name = "_plants", overwrite = TRUE)
+get_extract_intervals <- function(sc, period, plants = c("AAR", "ALM")) {
+
+  plants_ <- data.frame(plant = plants) %>%
+    copy_to(sc, ., name = "_plants_", overwrite = TRUE)
   
-  extract_intervals <- tbl(sc, "ianode_1s_extract_info") %>%
+  start_time <- today() - days(period)
+  year_ <- year(start_time)
+  month_ <- month(start_time)
+  
+  intervals <- tbl(sc, "ianode_1s") %>%
+    filter(plant %in% plants, year >= year_, month >= month_, ts >= start_time) %>%
     group_by(plant) %>%
-    summarise(nfts = max(newest_forward_ts, na.rm = TRUE),
-              obts = min(oldest_backward_ts, na.rm = TRUE)) %>%
+    summarize(end_time = min(ts, na.rm = TRUE)) %>%
     ungroup() %>%
-    right_join(requested_plants, by = "plant") %>%
-    mutate(nfts = coalesce(nfts, as.POSIXct('2019-01-01')),
-           obts = coalesce(obts,default_to_date)) %>%
-    select(plant, nfts, obts) %>%
-    collect()
-    
-  first_extract_intervals <- extract_intervals %>%
-    mutate(from_date = obts - days(1),
-           to_date = obts) %>%
-    mutate(from_date = fifelse(from_date < nfts, nfts, from_date),
-           interval = to_date - from_date) %>%
-    filter(interval > hours(1)) %>%
-    select(plant, from_date, to_date)
-    
-  next_extract_intervals
+    right_join(plants_, by = "plant") %>%
+    mutate(end_time = coalesce(end_time, now())) %>%
+    collect() %>%
+    mutate(end_time = date(end_time), 
+           start_time = end_time - days(1)) %>%
+    select(plant, start_time, end_time) %>%
+    as.list()
+  
+  lapply(1:period, function(d) {
+    intervals$start_time = intervals$start_time - d
+    intervals$end_time = intervals$end_time - d
+    intervals
+  }) %>%
+    bind_rows() %>%
+    arrange(desc(start_time), plant)
+
 }
 
-
-create_intervals <- function(plant_max_ts, plant_tags, nday) {
-  plant_max_ts %>%
-    inner_join(plant_tags, by = "pot") %>%
-    mutate(start_time = max_ts + dseconds(1),
-           end_time = (floor_date(start_time + ddays(nday), "day")),
-           sync_time = start_time) %>%
-    select(-max_ts) %>%
-    arrange(pot, tag)
-}
 
 
 extract_ianode <- function(plant, extraction_intervals) {
