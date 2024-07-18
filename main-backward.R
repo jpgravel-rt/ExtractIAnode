@@ -44,7 +44,7 @@ tryCatch({
   print(plants_last_extract)
 
   lapply(plants_last_extract$plant, function(plant_id) {
-    print("***** PLANT", plant_id, "*****")
+    print(paste("***** PLANT", plant_id, "*****"))
     plant_last_extract <- plants_last_extract %>% filter(plant == plant_id)
     lapply(1:EXTRACT_PERIOD_DAYS, function(nb_days) {
       plant_min_ts_per_pot <- get_min_ts_per_pot(sc, plant_id)

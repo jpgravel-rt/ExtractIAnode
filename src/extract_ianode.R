@@ -161,7 +161,7 @@ extract_ianode <- function(plant, extraction_intervals) {
 
 
 save_buffer_to_spark_table <- function(data_buffer) {
-  print("Moving the daily data from the temporary parquet to the final Hive table.")
+  print("Moving the temporary parquet to the final Hive table.")
   spark_read_parquet(sc, 
                      name = "temp_ianode", 
                      path = data_buffer, 
