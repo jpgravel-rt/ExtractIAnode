@@ -263,7 +263,6 @@ ConnectToSpark = function(database = "default"){
   sdf_sql(sc,"SET hive.merge.mapredfiles = true")
   sdf_sql(sc,"SET hive.merge.size.per.task = 256000000")
   sdf_sql(sc,"SET hive.merge.smallfiles.avgsize = 134217728")
-  sdf_sql(sc,"SET hive.exec.compress.output = true")
   sdf_sql(sc,"SET parquet.compression = snappy")
   
   return(sc)

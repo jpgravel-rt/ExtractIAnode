@@ -48,6 +48,28 @@ get_tags <- function(plant) {
 }
 
 
+
+get_min_ts_per_pot <- function(sc, plant_code, table_name = "ianode_1s") {
+  plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
+    filter(plant == plant_code)
+  print("Get the most ancient timestamp for each pot.")
+  plant_ianode_1s %>%
+    select(plant, pot, ym) %>%
+    group_by(plant, pot) %>%
+    summarise(ym = min(ym, na.rm = T)) %>%
+    slice_max(ym) %>%
+    inner_join(plant_ianode_1s, by = c("plant", "pot", "ym")) %>%
+    select(plant, pot, ts) %>%
+    group_by(plant, pot) %>%
+    summarize(min_ts = min(ts, na.rm = T)) %>%
+    ungroup() %>%
+    arrange(pot) %>%
+    collect() %>%
+    mutate(min_ts = as.POSIXct(min_ts, tz="UTC", origin="1970-01-01"))
+}
+
+
+# TODO: refactor year month -> ym
 get_max_ts_per_pot <- function(sc, plant_code) {
   plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
     filter(plant == plant_code)
@@ -70,58 +92,88 @@ get_max_ts_per_pot <- function(sc, plant_code) {
 }
 
 
-get_plants_lag_time <- function() {
-  ianodes <- tbl(sc, "ianode_1s")
-  result <- ianodes %>%
-    select(plant, pot, year, month) %>%
-    group_by(plant, pot, year) %>%
-    summarise(month = max(month, na.rm = T)) %>%
-    slice_max(year) %>%
-    inner_join(ianodes, by = c("plant", "pot", "year", "month")) %>%
-    select(plant, ts) %>%
+get_plants_lag_time <- function(sc, table_name = "ianode_1s") {
+  ianodes <- tbl(sc, table_name) %>%
+    select(plant, ym, ts)
+  
+  result_min <- ianodes %>%
+    group_by(plant) %>%
+    summarise(min_ym = min(ym, na.rm = T)) %>%
+    ungroup() %>%
+    inner_join(ianodes, by = c("plant", "min_ym" = "ym")) %>%
+    select(-min_ym) %>%
+    group_by(plant) %>%
+    summarize(min_ts = min(ts, na.rm = T)) %>%
+    ungroup()
+  
+  result_max <- ianodes %>%
+    group_by(plant) %>%
+    summarise(max_ym = max(ym, na.rm = T)) %>%
+    ungroup() %>%
+    inner_join(ianodes, by = c("plant", "max_ym" = "ym")) %>%
+    select(-max_ym)%>%
     group_by(plant) %>%
     summarize(max_ts = max(ts, na.rm = T)) %>%
+    ungroup()
+  
+  result_min %>%
+    inner_join(result_max, by = "plant") %>%
     collect()
-  return(result)
 }
 
 
-create_intervals <- function(plant_max_ts, plant_tags, nday) {
-  plant_max_ts %>%
-    inner_join(plant_tags, by = "pot") %>%
-    mutate(start_time = max_ts + dseconds(1),
-           end_time = (floor_date(start_time + ddays(nday), "day")),
+get_plants_last_extract <- function(sc, table_name = "ianode_1s") {
+  ianodes <- tbl(sc, table_name) %>% select(plant, ym, ts)
+  ianodes %>%
+    group_by(plant) %>%
+    summarise(min_ym = min(ym, na.rm = T)) %>%
+    ungroup() %>%
+    inner_join(ianodes, by = c("plant", "min_ym" = "ym")) %>%
+    select(-min_ym) %>%
+    group_by(plant) %>%
+    summarize(first_ts = min(ts, na.rm = T)) %>%
+    ungroup() %>%
+    collect()
+}
+
+
+create_intervals <- function(plant_min_ts_per_pot, plant_tags, plants_last_extract, nday = 1, period_days = 1) {
+  plant_min_ts_per_pot %>%
+    right_join(plant_tags, by = c("plant", "pot")) %>%
+    inner_join(plants_last_extract, by = "plant") %>%
+    mutate(start_time = ceiling_date(coalesce(min_ts, first_ts) - ddays(nday), "day"),
+           end_time = (floor_date(start_time + ddays(period_days), "day")),
            sync_time = start_time) %>%
-    select(-max_ts) %>%
-    arrange(pot, tag)
+    arrange(pot, tag) %>%
+    select(plant, pot, tag, path, kind, start_time, end_time, sync_time)
 }
 
 
 extract_ianode <- function(plant, extraction_intervals) {
-  
-  data_buffer <- paste0("hdfs://casagzclem1/tmp/extract_ianode_", plant, "_", 
-                        stringi::stri_rand_strings(1, 8))
+  base_path <- paste0("hdfs://casagzclem1/tmp/extract_ianode/", plant)
+  data_buffer <- paste0(base_path, "/", stringi::stri_rand_strings(1, 8))
   pot_count <<- 0
   extraction_intervals %>%
     group_by(pot) %>%
     group_walk(extract_pot_ianode, data_buffer, plant)
-  
-  
+  data_buffer
+}
+
+
+save_buffer_to_spark_table <- function(data_buffer) {
   print("Moving the daily data from the temporary parquet to the final Hive table.")
   spark_read_parquet(sc, 
                      name = "temp_ianode", 
                      path = data_buffer, 
                      overwrite = T) %>%
+    sdf_repartition(partition_by = c("plant", "pot", "ym")) %>%
     spark_write_table("ianode_1s", mode = "append")
-  
   data_buffer_path <- right(data_buffer, 32)
-  system(paste0("hdfs dfs -rm -R ", data_buffer_path))
+  system(paste0("hdfs dfs -rm -R ", data_buffer_path))  
 }
 
 
 extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
-  
-  
   
   i <<- 0
   pot <- .y$pot
@@ -173,12 +225,11 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   pivoted_pot_data <- pot_data %>% 
     inner_join(pot_tags, by = "tag") %>% 
     transmute(pot, 
-              year = as.integer(year(ts)), 
-              month = as.integer(month(ts)), 
+              ym = as.integer(year(ts) * 100 + month(ts)), 
               ts = floor_date(ts, "seconds"), 
               kind, 
               val = numval) %>% 
-    pivot_wider(id_cols = c("pot", "year", "month", "ts"), 
+    pivot_wider(id_cols = c("pot", "ym", "ts"), 
                 names_from = kind,
                 values_from =  val,
                 values_fn = first) %>%
@@ -187,17 +238,17 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   
   if (plant == "AAR") {
     pivoted_pot_data <- pivoted_pot_data %>%
-      transmute(ts,
+      transmute(as.POSIXct(ts),
                 iano01, iano02, iano03, iano04, iano05, iano06, iano07, iano08, iano09, iano10,
                 iano11, iano12, iano13, iano14, iano15, iano16, iano17, iano18, iano19, iano20, 
-                iano21, iano22, iano23, iano24, i, v, plant="AAR", pot, year, month)
+                iano21, iano22, iano23, iano24, i, v, plant="AAR", pot, ym)
   }
   else if (plant == "ALM") {
     pivoted_pot_data <- pivoted_pot_data %>%
-      transmute(ts,
+      transmute(as.POSIXct(ts),
                 iano01, iano02, iano03, iano04, iano05, iano06, iano07, iano08, iano09, iano10,
                 iano11, iano12, iano13, iano14, iano15, iano16, iano17, iano18, iano19, iano20,
-                iano21=NA, iano22=NA, iano23=NA, iano24=NA, i, v, plant="ALM", pot, year, month)
+                iano21=NA, iano22=NA, iano23=NA, iano24=NA, i, v, plant="ALM", pot, ym)
   }
   
   
@@ -215,7 +266,16 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   if (pot_count %% 8 == 0) {
     print("Refresh spark session.")
     spark_disconnect(sc)
-    sc <<- ConnectToSpark("reduction")
+    success <- FALSE
+    while (!success) {
+      tryCatch({
+        sc <<- ConnectToSpark("reduction")
+        success <<- TRUE
+      }
+      error = function(e) {
+        print("Connection to spark failed. ", e)
+      })
+    }
   }
   
 }
