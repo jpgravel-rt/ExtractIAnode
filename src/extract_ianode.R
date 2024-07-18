@@ -267,14 +267,17 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
     print("Refresh spark session.")
     spark_disconnect(sc)
     success <- FALSE
-    while (!success) {
-      tryCatch({
+    retry <- 0
+    while (!success && retry < 3) {
+      success <- tryCatch({
         sc <<- ConnectToSpark("reduction")
-        success <<- TRUE
-      }
+        TRUE
+      },
       error = function(e) {
         print("Connection to spark failed. ", e)
+        FALSE
       })
+      retry <- retry + 1
     }
   }
   

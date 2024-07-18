@@ -29,7 +29,7 @@ tryCatch({
   
   print("Evaluate the lag time of each plant.")
   to_ts_limit_high <- today()
-  from_ts_limit_low <- as.POSIXct("2022-01-01")
+  from_ts_limit_low <- as.POSIXct("2024-01-01")
   plants <- data.frame(plant = c("AAR", "ALM"),
                        default_from_ts = from_ts_limit_low,
                        default_to_ts = to_ts_limit_high)
