@@ -44,12 +44,13 @@ tryCatch({
   print(plants_last_extract)
 
   lapply(plants_last_extract$plant, function(plant_id) {
+    print("***** PLANT", plant_id, "*****")
     plant_last_extract <- plants_last_extract %>% filter(plant == plant_id)
     lapply(1:EXTRACT_PERIOD_DAYS, function(nb_days) {
       plant_min_ts_per_pot <- get_min_ts_per_pot(sc, plant_id)
       plant_tags <- get_tags(plant_id) %>% mutate(pot = as.integer(pot))
       extraction_intervals <- create_intervals(plant_min_ts_per_pot, plant_tags, 
-                                               plants_last_extract, 2)
+                                               plants_last_extract, nb_days)
       extract_ianode(plant_id, extraction_intervals)
     }) %>% 
       distinct() %>%

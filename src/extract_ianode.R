@@ -279,6 +279,9 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
       })
       retry <- retry + 1
     }
+    if (retry == 3) {
+      stop("Unable to connect to spark after 3 tries.")
+    }
   }
   
 }
