@@ -150,8 +150,7 @@ create_intervals <- function(plant_min_ts_per_pot, plant_tags, plants_last_extra
 
 
 extract_ianode <- function(plant, extraction_intervals) {
-  base_path <- paste0("hdfs://casagzclem1/tmp/extract_ianode/", plant)
-  data_buffer <- paste0(base_path, "/", stringi::stri_rand_strings(1, 8))
+  data_buffer <- paste0("hdfs://casagzclem1/tmp/extract_ianode/", plant)
   pot_count <<- 0
   extraction_intervals %>%
     group_by(pot) %>%

@@ -51,8 +51,10 @@ tryCatch({
       plant_tags <- get_tags(plant_id) %>% mutate(pot = as.integer(pot))
       extraction_intervals <- create_intervals(plant_min_ts_per_pot, plant_tags, 
                                                plants_last_extract, nb_days)
-      extract_ianode(plant_id, extraction_intervals)
+      ianode_path = extract_ianode(plant_id, extraction_intervals)
+      data.frame(path = ianode_path)
     }) %>% 
+      bind_rows() %>%
       distinct() %>%
       save_buffer_to_spark_table()
   })
