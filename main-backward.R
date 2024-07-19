@@ -12,7 +12,7 @@ source("src/extract_ianode.R")
 
 pexlib <- import("pexlib")
 req <- import("requests")
-req$packages$urllib3$disable_warnings() 
+req$packages$urllib3$disable_warnings()
 rm(req)
 
 EXTRACT_PERIOD_DAYS = 7
@@ -30,14 +30,15 @@ tryCatch({
   print("Evaluate the lag time of each plant.")
   to_ts_limit_high <- today()
   from_ts_limit_low <- as.POSIXct("2024-01-01")
-  plants <- data.frame(plant = c("AAR", "ALM"),
+  plants <- data.frame(plant = c("ALM", "AAR"),
                        default_from_ts = from_ts_limit_low,
                        default_to_ts = to_ts_limit_high)
   plants_last_extract <- get_plants_last_extract(sc) %>%
     right_join(plants, by = "plant") %>%
     mutate(first_ts = as.POSIXct(first_ts, tz = "UTC", origin = "1970-01-01")) %>%
     mutate(first_ts = coalesce(first_ts, default_to_ts)) %>%
-    select(plant, first_ts)
+    select(plant, first_ts) %>%
+    arrange(desc(plant))
 
 
   print("List of plants and their earliest extraction date.")

@@ -273,7 +273,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
         TRUE
       },
       error = function(e) {
-        print("Connection to spark failed. ", e)
+        warning(paste0("Connection to spark failed. ", e))
         FALSE
       })
       retry <- retry + 1
