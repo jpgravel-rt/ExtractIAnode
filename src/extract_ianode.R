@@ -159,21 +159,23 @@ extract_ianode <- function(plant, extraction_intervals) {
 }
 
 
-save_buffer_to_spark_table <- function(data_buffer) {
-  print("Moving the temporary parquet to the final Hive table.")
-  spark_read_parquet(sc,
-                     name = "temp_ianode",
-                     path = data_buffer,
-                     overwrite = T) %>%
-    sdf_repartition(partition_by = c("plant", "pot", "ym")) %>%
-    spark_write_table("ianode_1s", mode = "append")
-  data_buffer_path <- right(data_buffer, 23)
-  system(paste0("hdfs dfs -rm -R ", data_buffer_path))
+save_buffer_to_spark_table <- function(data_buffers) {
+  lapply(data_buffers, function(data_buffer) {
+    print(paste0("Moving '", data_buffer, "' to the final Hive table."))
+    spark_read_parquet(sc,
+                       name = "temp_ianode",
+                       path = data_buffer) %>%
+      sdf_repartition(partition_by = c("plant", "pot", "ym")) %>%
+      spark_write_table("ianode_1s", mode = "append")
+      tbl_uncache(sc, "temp_ianode")
+    data_buffer_path <- right(data_buffer, 23)
+    system(paste0("hdfs dfs -rm -R ", data_buffer_path))
+  }) %>%
+    invisible()
 }
 
 
 extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
-
   i <<- 0
   pot <- .y$pot
   pot_tags <- as.data.frame(.x)

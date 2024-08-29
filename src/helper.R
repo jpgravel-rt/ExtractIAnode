@@ -15,7 +15,7 @@ attachMutex <- function(name, timeout = 5) {
 
 
 #' Release a mutex by name or by mutex instance.
-#' 
+#'
 #' @param mutex can be a mutex instance (attachMutex) or a mutex name (character string)
 releaseMutex <- function(mutex) {
   showErr <- getOption("show.error.messages")
@@ -50,26 +50,26 @@ unLockMutexByName <- function(name) {
     })
   options(show.error.messages = TRUE)
   unlock(mutex)
-  
+
   return(mutex)
 }
 
 
 getLastValue <- function(tagname, table) {
-  impala <- dbConnect(odbc::odbc(), driver = "impala", host = "casagzclem1", 
-                      port = 21050, AuthMech = 6, UID = "impala", PWD = "pwd", 
-                      UseNativeQuery = 1, CurrentSchemaRestrictedMetadata = 1, 
+  impala <- dbConnect(odbc::odbc(), driver = "impala", host = "casagzclem1",
+                      port = 21050, AuthMech = 6, UID = "impala", PWD = "pwd",
+                      UseNativeQuery = 1, CurrentSchemaRestrictedMetadata = 1,
                       schema = "vaudreuil")
-  
+
   res <- dbSendStatement(impala, paste0("INVALIDATE METADATA ", table))
   if(dbHasCompleted(res)) dbClearResult(res)
-  
-  lastValue <- (tbl(impala, table) %>% group_by(tag) %>% 
-                  filter(tag == tagname) %>% 
+
+  lastValue <- (tbl(impala, table) %>% group_by(tag) %>%
+                  filter(tag == tagname) %>%
                   summarize(maxTs = max(ts, na.rm = T)) %>% select(tag, maxTs) %>% collect())$maxts[1]
-  
+
   dbDisconnect(impala)
-  
+
   if(is.na(lastValue)) lastValue <- as.POSIXct("2020-09-21", tz = "UTC")
 
   return(lastValue)
@@ -79,13 +79,13 @@ getLastValue <- function(tagname, table) {
 sendDfToHive <- function(df, hiveSchema, hiveTableName, hivePartition) {
   dask <- import("dask")
   dd <- import("dask.dataframe")
-  
+
   df_dask <- dd$from_pandas(df, npartitions=1)
-  df_dask$to_parquet(path = paste0("hdfs:///user/hive/warehouse/", hiveSchema, ".db/", hiveTableName), 
-                     write_index = F, 
-                     append = T, 
-                     engine = "pyarrow", 
-                     compression = "none", 
+  df_dask$to_parquet(path = paste0("hdfs:///user/hive/warehouse/", hiveSchema, ".db/", hiveTableName),
+                     write_index = F,
+                     append = T,
+                     engine = "pyarrow",
+                     compression = "none",
                      partition_on = hivePartition
   )
   system(paste0("hive -e 'MSCK REPAIR TABLE ", hiveSchema, ".", hiveTableName, "'"))
@@ -94,12 +94,12 @@ sendDfToHive <- function(df, hiveSchema, hiveTableName, hivePartition) {
 # Function to send a dataframe to HDFS, as a parquet file
 sendDfToHDFS <- function(df, location) {
   #library(reticulate)
-  
+
   #py_run_string("import os")
   #py_run_string("os.environ['CLASSPATH'] = ''")
   #py_run_string("os.environ['HADOOP_HOME'] = '/etc/hadoop/'")
   #py_run_string("os.environ['SPARK_HOME'] = ''")
-  #sudo 
+  #sudo
   dask <- import("dask")
   dd <- import("dask.dataframe")
   #df=mtcars
@@ -120,22 +120,22 @@ pi_to_df <- function(date_debut, date_fin, tags, batchSize, interval)
     print(paste0("############################# ", Sys.time(), " ###########################################"))
     print(paste0("Extracting data from ", date_debut, " to ", date_debut + batchSize - 1))
     print("#############################################################################################")
-    
+
     for (i in 1:nrow(tags)) {
       point_path <- paste0(tags$server, tags$tag[[i]])
       creation_date <- tags$creationdate[[i]]
       interval <- tags$interval[[i]]
       if(creation_date < date_debut) {
         print(paste0("Extracting point ", point_path))
-        df <- bind_rows(df, 
-                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/", 
-                                             pointPath = point_path, 
-                                             startTime = as.character(date_debut), 
-                                             endTime = as.character(date_debut + batchSize), 
-                                             syncTime = as.character(date_debut), 
-                                             interval = interval, 
-                                             username = credentials$username, 
-                                             password = credentials$password, 
+        df <- bind_rows(df,
+                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/",
+                                             pointPath = point_path,
+                                             startTime = as.character(date_debut),
+                                             endTime = as.character(date_debut + batchSize),
+                                             syncTime = as.character(date_debut),
+                                             interval = interval,
+                                             username = credentials$username,
+                                             password = credentials$password,
                                              dropDuplicates = F)
         )
       }
@@ -153,7 +153,7 @@ pi_to_df <- function(date_debut, date_fin, tags, batchSize, interval)
 pi_to_hive_table <- function(date_debut, date_fin, tags, batchSize, interval, table)
 {
   credentials <- config::get()
-  
+
   while((date_debut + batchSize - 1) < date_fin) {
     print(paste0("############################# ", Sys.time(), " ###########################################"))
     print(paste0("Extracting data from ", date_debut, " to ", date_debut + batchSize - 1))
@@ -164,15 +164,15 @@ pi_to_hive_table <- function(date_debut, date_fin, tags, batchSize, interval, ta
       creation_date <- tags$creationdate[[i]]
       if(creation_date < date_debut) {
         print(paste0("Extracting point ", point_path))
-        df <- bind_rows(df, 
-                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/", 
-                                             pointPath = point_path, 
-                                             startTime = as.character(date_debut), 
-                                             endTime = as.character(date_debut + batchSize), 
-                                             syncTime = as.character(date_debut), 
-                                             interval = interval, 
-                                             username = credentials$username, 
-                                             password = credentials$password, 
+        df <- bind_rows(df,
+                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/",
+                                             pointPath = point_path,
+                                             startTime = as.character(date_debut),
+                                             endTime = as.character(date_debut + batchSize),
+                                             syncTime = as.character(date_debut),
+                                             interval = interval,
+                                             username = credentials$username,
+                                             password = credentials$password,
                                              dropDuplicates = F)
         )
       }
@@ -194,7 +194,7 @@ pi_to_hive_table <- function(date_debut, date_fin, tags, batchSize, interval, ta
 pi_to_hdfs <- function(date_debut, date_fin, tags, batchSize, interval, location)
 {
   credentials <- config::get()
-  
+
   while((date_debut + batchSize - 1) < date_fin) {
     print(paste0("############################# ", Sys.time(), " ###########################################"))
     print(paste0("Extracting data from ", date_debut, " to ", date_debut + batchSize - 1))
@@ -205,15 +205,15 @@ pi_to_hdfs <- function(date_debut, date_fin, tags, batchSize, interval, location
       #creation_date <- tags$creationdate[[i]]
       #if(creation_date < date_debut) {
         print(paste0("Extracting point ", point_path))
-        df <- bind_rows(df, 
-                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/", 
-                                             pointPath = point_path, 
-                                             startTime = as.character(date_debut), 
-                                             endTime = as.character(date_debut + batchSize), 
-                                             syncTime = as.character(date_debut), 
-                                             interval = interval, 
-                                             username = credentials$username, 
-                                             password = credentials$password, 
+        df <- bind_rows(df,
+                        pex$extractDataframe(piWebServer = "https://casagszwebpi1/piwebapi/",
+                                             pointPath = point_path,
+                                             startTime = as.character(date_debut),
+                                             endTime = as.character(date_debut + batchSize),
+                                             syncTime = as.character(date_debut),
+                                             interval = interval,
+                                             username = credentials$username,
+                                             password = credentials$password,
                                              dropDuplicates = F)
         )
       #}
@@ -233,13 +233,13 @@ pi_to_hdfs <- function(date_debut, date_fin, tags, batchSize, interval, location
 #---------------------------------
 # Spark
 #---------------------------------
-ConnectToSpark = function(database = "default"){
+ConnectToSpark = function(database = "default", session_name = "IAnodeExtract"){
   #Set home
   Sys.setenv(SPARK_HOME = "/usr/lib/spark/")
-  
+
   #Initialize configuration
   config = spark_config()
-  
+
   #Config
   config$`spark.yarn.am.memory`               = "1g"     #Default 512m. Amount of memory to use for the YARN Application Master in client mode. spark.yarn.am.memory + some overhead should be less than yarn.nodemanager.resource.memory-mb. In cluster mode, use spark.driver.memory instead.
   config$`spark.yarn.am.memoryOverhead`       = "1500m"     #Default "AM" memory * 0.10, with minimum of 384. Same as spark.driver.memoryOverhead, but for the YARN Application Master in client mode.
@@ -250,20 +250,20 @@ ConnectToSpark = function(database = "default"){
   config$`spark.kryoserializer.buffer.max.mb` = "512"
   config$`spark.sql.execution.arrow.enabled`  = TRUE
   config$`hive.exec.max.dynamic.partitions`   = TRUE
-  
+
 
   #Connect
-  sc = spark_connect(master = "yarn", app_name = paste0("sparklyr-", Sys.getenv("USER")), config = config)
+  sc = spark_connect(master = "yarn", app_name = paste0(session_name, "-", Sys.getenv("USER")), config = config)
   if (database != "default") {
     sdf_sql(sc, paste("USE", database))
   }
-  
+
   sdf_sql(sc,"SET hive.exec.dynamic.partition.mode = nonstrict")
   sdf_sql(sc,"SET hive.merge.mapfiles = true")
   sdf_sql(sc,"SET hive.merge.mapredfiles = true")
   sdf_sql(sc,"SET hive.merge.size.per.task = 256000000")
   sdf_sql(sc,"SET hive.merge.smallfiles.avgsize = 134217728")
   sdf_sql(sc,"SET parquet.compression = snappy")
-  
+
   return(sc)
 }
