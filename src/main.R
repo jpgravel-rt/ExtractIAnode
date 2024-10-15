@@ -50,11 +50,11 @@ tryCatch({
         print(paste(plant, from_dates$pot, from_dates$max_ts))
         
         plant_tags <- get_tags(plant)
-        extraction_intervals <- create_intervals(plant_max_ts, plant_tags, plant_max_ts, 1) %>%
+        extraction_intervals <- create_intervals(plant_max_ts, plant_tags, 1) %>%
           filter(end_time <= extraction_time_limit)
         
         print(system.time({
-          #extract_ianode(plant, extraction_intervals)
+          extract_ianode(plant, extraction_intervals)
         }))
         
         # returns the earliest end time

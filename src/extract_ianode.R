@@ -128,11 +128,10 @@ get_plants_last_extract <- function(sc, table_name = "ianode_1s") {
 }
 
 
-create_intervals <- function(plant_min_ts_per_pot, plant_tags, plants_last_extract, nday = 1, period_days = 1) {
-  plant_min_ts_per_pot %>%
+create_intervals <- function(plant_max_ts, plant_tags, nday = 1, period_days = 1) {
+  plant_max_ts %>%
     right_join(plant_tags, by = c("plant", "pot")) %>%
-    inner_join(plants_last_extract, by = "plant") %>%
-    mutate(start_time = ceiling_date(coalesce(max_ts, first_ts), "day"),
+    mutate(start_time = coalesce(max_ts, ymd("2024-01-01", tz = "UTC")),
            end_time = (floor_date(start_time + ddays(period_days), "day")),
            sync_time = start_time) %>%
     arrange(pot, tag) %>%
