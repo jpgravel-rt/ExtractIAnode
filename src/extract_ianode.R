@@ -30,7 +30,6 @@ get_tags <- function(plant) {
                 kind = ifelse(right(tag, 8) == "VCUVE.PV", "v",
                               ifelse(right(tag, 7) == "IMFC.PV", "i",
                                      paste0("iano", substr(tag,22, 23)))))
-    return(plant_tags)
   }
   else if (plant == "ALM") {
     plant_tags <- file_data %>%
@@ -43,8 +42,8 @@ get_tags <- function(plant) {
                 kind = ifelse(right(tag, 8) == "VCUVE.PV", "v",
                               ifelse(right(tag, 7) == "IMFC.PV", "i",
                                      paste0("iano", substr(tag,23, 24)))))
-    return(plant_tags)
   }
+  plant_tags %>% mutate(pot = as.integer(pot))
 }
 
 
@@ -69,26 +68,18 @@ get_min_ts_per_pot <- function(sc, plant_code, table_name = "ianode_1s") {
 }
 
 
-# TODO: refactor year month -> ym
 get_max_ts_per_pot <- function(sc, plant_code) {
-  plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
-    filter(plant == plant_code)
   print("Get the most recent timestamp for each pot.")
-  plant_ianode_1s %>%
-    select(plant, pot, year, month) %>%
-    group_by(plant, pot, year) %>%
-    summarise(month = max(month, na.rm = T)) %>%
-    slice_max(year) %>%
-    inner_join(plant_ianode_1s, by = c("plant", "pot", "year", "month")) %>%
-    select(plant, pot, ts) %>%
-    group_by(plant, pot) %>%
-    summarize(max_ts = max(ts, na.rm = T)) %>%
-    mutate(pot = as.character(as.integer(pot))) %>%
-    arrange(pot) %>%
-    collect() %>%
-    select(pot, max_ts) %>% # TODO: Shall not need to select and summarize again, fix that!
+  start_ym = ifelse(plant_code == "AAR", 202407, 202401)
+  plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
+    filter(plant == plant_code, ym >= start_ym) %>%
+    select(pot, ts) %>%
     group_by(pot) %>%
-    summarize(max_ts = max(max_ts))
+    summarize(max_ts = max(ts, na.rm = TRUE)) %>%
+    ungroup() %>%
+    collect() %>%
+    mutate(max_ts = max_ts + seconds(1)) %>%
+    mutate(plant = plant_code, .before = 1)
 }
 
 
@@ -141,7 +132,7 @@ create_intervals <- function(plant_min_ts_per_pot, plant_tags, plants_last_extra
   plant_min_ts_per_pot %>%
     right_join(plant_tags, by = c("plant", "pot")) %>%
     inner_join(plants_last_extract, by = "plant") %>%
-    mutate(start_time = ceiling_date(coalesce(min_ts, first_ts) - ddays(nday), "day"),
+    mutate(start_time = ceiling_date(coalesce(max_ts, first_ts), "day"),
            end_time = (floor_date(start_time + ddays(period_days), "day")),
            sync_time = start_time) %>%
     arrange(pot, tag) %>%
