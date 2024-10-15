@@ -15,7 +15,7 @@ req <- import("requests")
 req$packages$urllib3$disable_warnings()
 rm(req)
 
-EXTRACT_PERIOD_DAYS = 7
+EXTRACT_PERIOD_DAYS <- 7
 
 client <- pexlib$Client(
   "https://casagszwebpi1.corp.riotinto.org/piwebapi/",
@@ -45,6 +45,8 @@ tryCatch({
   print("List of plants and their earliest extraction date.")
   print(plants_last_extract)
 
+  print(paste0(now(), " Start!"))
+
   lapply(plants_last_extract$plant, function(plant_id) {
     print(paste("***** PLANT", plant_id, "*****"))
     plant_last_extract <- plants_last_extract %>% filter(plant == plant_id)
@@ -59,8 +61,9 @@ tryCatch({
       bind_rows() %>%
       distinct() %>%
       save_buffer_to_spark_table()
-  })
+  }) %>% invisible()
 
+  print(paste0(now(), " Done!"))
 
 },
 finally = {
