@@ -45,21 +45,24 @@ tryCatch({
       last_date_df <- lapply(plants_lag_time$plant, function(plant) {
         plant_max_ts <- get_max_ts_per_pot(sc, plant) %>%
           filter((extraction_time_limit - max_ts) >= ddays(1))
-        
-        from_dates <- plant_max_ts %>% select(pot, max_ts) %>% distinct() %>% arrange()
+
+        from_dates <- plant_max_ts %>%
+          transmute(plant, pot, max_ts = max_ts + seconds(1)) %>%
+          distinct() %>%
+          arrange(plant, pot, max_ts)
         print(paste(plant, from_dates$pot, from_dates$max_ts))
         
         plant_tags <- get_tags(plant)
-        extraction_intervals <- create_intervals(plant_max_ts, plant_tags, 1) %>%
+        extraction_intervals <- create_intervals(from_dates, plant_tags, 1) %>%
           filter(end_time <= extraction_time_limit)
         
         print(system.time({
-          extract_ianode(plant, extraction_intervals)
+          #extract_ianode(plant, extraction_intervals)
         }))
         
         # returns the earliest end time
         extraction_intervals %>%
-          transmute(plant=plant, end_time) %>%
+          select(plant, end_time) %>%
           summarize(end_time = min(end_time))
       }) %>%
         bind_rows() %>%

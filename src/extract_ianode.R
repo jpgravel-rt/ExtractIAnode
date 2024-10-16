@@ -78,7 +78,6 @@ get_max_ts_per_pot <- function(sc, plant_code) {
     summarize(max_ts = max(ts, na.rm = TRUE)) %>%
     ungroup() %>%
     collect() %>%
-    mutate(max_ts = max_ts + seconds(1)) %>%
     mutate(plant = plant_code, .before = 1)
 }
 
@@ -128,11 +127,12 @@ get_plants_last_extract <- function(sc, table_name = "ianode_1s") {
 }
 
 
-create_intervals <- function(plant_max_ts, plant_tags, nday = 1, period_days = 1) {
-  plant_max_ts %>%
+create_intervals <- function(from_dates, plant_tags, current_period = 1, days_per_period = 1) {
+  start_day <- (current_period - 1) * days_per_period
+  from_dates %>%
     right_join(plant_tags, by = c("plant", "pot")) %>%
-    mutate(start_time = coalesce(max_ts, ymd("2024-01-01", tz = "UTC")),
-           end_time = (floor_date(start_time + ddays(period_days), "day")),
+    mutate(start_time = floor_date(coalesce(max_ts, ymd("2024-01-01", tz = "UTC")), "day") + ddays(start_day),
+           end_time = start_time + ddays(days_per_period),
            sync_time = start_time) %>%
     arrange(pot, tag) %>%
     select(plant, pot, tag, path, kind, start_time, end_time, sync_time)
