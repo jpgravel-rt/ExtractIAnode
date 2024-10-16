@@ -51,7 +51,7 @@ get_tags <- function(plant) {
 get_min_ts_per_pot <- function(sc, plant_code, table_name = "ianode_1s") {
   plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
     filter(plant == plant_code)
-  print("Get the most ancient timestamp for each pot.")
+  log_info("Get the most ancient timestamp for each pot.")
   plant_ianode_1s %>%
     select(plant, pot, ym) %>%
     group_by(plant, pot) %>%
@@ -69,7 +69,7 @@ get_min_ts_per_pot <- function(sc, plant_code, table_name = "ianode_1s") {
 
 
 get_max_ts_per_pot <- function(sc, plant_code) {
-  print("Get the most recent timestamp for each pot.")
+  log_info("Get the most recent timestamp for each pot.")
   start_ym = ifelse(plant_code == "AAR", 202407, 202401)
   plant_ianode_1s <- tbl(sc, "ianode_1s") %>%
     filter(plant == plant_code, ym >= start_ym) %>%
@@ -77,97 +77,51 @@ get_max_ts_per_pot <- function(sc, plant_code) {
     group_by(pot) %>%
     summarize(max_ts = max(ts, na.rm = TRUE)) %>%
     ungroup() %>%
+    arrange(pot) %>%
     collect() %>%
     mutate(plant = plant_code, .before = 1)
 }
 
 
-get_plants_lag_time <- function(sc, table_name = "ianode_1s") {
-  ianodes <- tbl(sc, table_name) %>%
-    select(plant, ym, ts)
 
-  result_min <- ianodes %>%
-    group_by(plant) %>%
-    summarise(min_ym = min(ym, na.rm = T)) %>%
-    ungroup() %>%
-    inner_join(ianodes, by = c("plant", "min_ym" = "ym")) %>%
-    select(-min_ym) %>%
-    group_by(plant) %>%
-    summarize(min_ts = min(ts, na.rm = T)) %>%
-    ungroup()
+create_intervals <- function(max_ts_per_pot, plant_tags, end_date) {
 
-  result_max <- ianodes %>%
-    group_by(plant) %>%
-    summarise(max_ym = max(ym, na.rm = T)) %>%
-    ungroup() %>%
-    inner_join(ianodes, by = c("plant", "max_ym" = "ym")) %>%
-    select(-max_ym)%>%
-    group_by(plant) %>%
-    summarize(max_ts = max(ts, na.rm = T)) %>%
-    ungroup()
-
-  result_min %>%
-    inner_join(result_max, by = "plant") %>%
-    collect()
-}
-
-
-get_plants_last_extract <- function(sc, table_name = "ianode_1s") {
-  ianodes <- tbl(sc, table_name) %>% select(plant, ym, ts)
-  ianodes %>%
-    group_by(plant) %>%
-    summarise(min_ym = min(ym, na.rm = T)) %>%
-    ungroup() %>%
-    inner_join(ianodes, by = c("plant", "min_ym" = "ym")) %>%
-    select(-min_ym) %>%
-    group_by(plant) %>%
-    summarize(first_ts = min(ts, na.rm = T)) %>%
-    ungroup() %>%
-    collect()
-}
-
-
-create_intervals <- function(from_dates, plant_tags, current_period = 1, days_per_period = 1) {
-  start_day <- (current_period - 1) * days_per_period
-  from_dates %>%
+  extract_epoch <- ymd_hms("2023-12-31 23:59:59", tz = "UTC")
+  latest_ts_per_pot = max_ts_per_pot %>%
     right_join(plant_tags, by = c("plant", "pot")) %>%
-    mutate(start_time = floor_date(coalesce(max_ts, ymd("2024-01-01", tz = "UTC")), "day") + ddays(start_day),
-           end_time = start_time + ddays(days_per_period),
-           sync_time = start_time) %>%
-    arrange(pot, tag) %>%
-    select(plant, pot, tag, path, kind, start_time, end_time, sync_time)
+    mutate(latest_ts = coalesce(max_ts, extract_epoch))
+    
+  start_date <- (min(max_ts_per_pot$max_ts, na.rm = TRUE) %>% as.Date()) + days(1)
+  all_dates <- seq(start_date, end_date, by = "day")
+  
+  lapply(all_dates, function (current_date) {
+    latest_ts_per_pot %>%
+      mutate(start_time = current_date,
+             end_time = start_time + days(1),
+             sync_time = start_time)
+  }) %>%
+    bind_rows() %>%
+    filter(latest_ts < start_time) %>%
+    arrange(start_time, pot, tag) %>%
+    select(pot, tag, path, kind, start_time, end_time, sync_time)
 }
+
 
 
 extract_ianode <- function(plant, extraction_intervals) {
   data_buffer <- paste0("hdfs://casagzclem1/tmp/extract_ianode/", plant)
   pot_count <<- 0
   extraction_intervals %>%
-    group_by(pot) %>%
+    group_by(start_time, pot) %>%
     group_walk(extract_pot_ianode, data_buffer, plant)
   data_buffer
-}
-
-
-save_buffer_to_spark_table <- function(data_buffers) {
-  lapply(data_buffers, function(data_buffer) {
-    print(paste0("Moving '", data_buffer, "' to the final Hive table."))
-    spark_read_parquet(sc,
-                       name = "temp_ianode",
-                       path = data_buffer) %>%
-      sdf_repartition(partition_by = c("plant", "pot", "ym")) %>%
-      spark_write_table("ianode_1s", mode = "append")
-      tbl_uncache(sc, "temp_ianode")
-    data_buffer_path <- right(data_buffer, 23)
-    system(paste0("hdfs dfs -rm -R ", data_buffer_path))
-  }) %>%
-    invisible()
 }
 
 
 extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   i <<- 0
   pot <- .y$pot
+  start_time = .y$start_time
   pot_tags <- as.data.frame(.x)
   tag_count <- nrow(pot_tags)
   rownames(pot_tags) <- pot_tags$path
@@ -175,17 +129,18 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   rowcount <- 0
   while (rowcount == 0 && nrow(pot_tags) > 0 && pot_tags$end_time[[1]] <= today()) {
 
-    print(paste0("Extraction for pot ", pot, "; From ", pot_tags$start_time[[1]], " to ",
-                 pot_tags$end_time[[1]]))
+    pot_tags_start_time <- start_time
+    pot_tags_end_time <- pot_tags$end_time[[1]]
+    log_info("Extraction for pot {pot}; From {pot_tags_start_time} to {pot_tags_end_time}")
 
     pot_data <- lapply(pot_tags$path, function(tag_path) {
       row <- pot_tags[tag_path,]
       i <<- i + 1
-      print(paste0("[", i, "/", tag_count, "] ", tag_path))
+      log_info("[{i}/{tag_count}] {tag_path}")
       pexlib$extractor$extract_dataframe(
         client,
         tag_path,
-        start_time = as.character(row$start_time),
+        start_time = as.character(start_time),
         end_time   = as.character(row$end_time),
         sync_time  = as.character(row$sync_time),
         interval   = "1s",
@@ -199,12 +154,13 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
     if (rowcount == 0) {
       i <<- 0
       pot_tags <- pot_tags %>% mutate(end_time = end_time + ddays(1))
-      print(paste("No data, increment end_time to", pot_tags$end_time[[1]]))
+      pot_tags_end_time <- pot_tags$end_time[[1]]
+      log_warn("No data, increment end_time to {pot_tags_end_time}")
     }
   }
 
   # add dummy data to make sure all columns are created during pivot.
-  placeholder_ts <- (pot_tags %>% head(1))$start_time - dseconds(1)
+  placeholder_ts <- start_time - dseconds(1)
   padding_row <- pot_tags %>%
     transmute(tag, ts = placeholder_ts, numval = NA)
   pot_data <- pot_data %>%
@@ -212,7 +168,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
     arrange(tag, ts)
 
   # make the pivot
-  print(paste0("Pivoting pot ", pot, " data."))
+  log_info("Pivoting pot {pot} data.")
   pivoted_pot_data <- pot_data %>%
     inner_join(pot_tags, by = "tag") %>%
     transmute(pot,
@@ -223,7 +179,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
     pivot_wider(id_cols = c("pot", "ym", "ts"),
                 names_from = kind,
                 values_from =  val,
-                values_fn = first) %>%
+                values_fn = mean) %>%
     filter(ts > placeholder_ts)
 
 
@@ -243,7 +199,8 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   }
 
 
-  print(paste0("Saving ", nrow(pivoted_pot_data), " rows."))
+  saved_row_count <- nrow(pivoted_pot_data)
+  log_info("Saving {saved_row_count} rows.")
   sdf_pivoted_pot_data <- copy_to(sc,
                                   df = pivoted_pot_data,
                                   name = "pivoted_pot_data",
@@ -255,7 +212,7 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
 
   pot_count <<- pot_count + 1
   if (pot_count %% 8 == 0) {
-    print("Refresh spark session.")
+    log_info("Refresh spark session.")
     spark_disconnect(sc)
     success <- FALSE
     retry <- 0
@@ -276,3 +233,22 @@ extract_pot_ianode <- function(.x, .y, data_buffer, plant) {
   }
 
 }
+
+
+
+save_buffer_to_spark_table <- function(data_buffers) {
+  lapply(data_buffers, function(data_buffer) {
+    log_info("Moving '{data_buffer}' to the final Hive table.")
+    spark_read_parquet(sc,
+                       name = "temp_ianode",
+                       path = data_buffer) %>%
+      sdf_repartition(partition_by = c("plant", "pot", "ym")) %>%
+      spark_write_table("ianode_1s", mode = "append")
+    tbl_uncache(sc, "temp_ianode")
+    data_buffer_path <- right(data_buffer, 23)
+    system(paste0("hdfs dfs -rm -R ", data_buffer_path))
+  }) %>%
+    invisible()
+}
+
+
