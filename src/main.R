@@ -37,15 +37,22 @@ tryCatch({
     log_info("Extraction for {plant}.")
     max_ts_per_pot <- get_max_ts_per_pot(sc, plant) %>% filter(max_ts < end_date)
     if (nrow(max_ts_per_pot) == 0) {
-      # there is nothing to extract
-      return(0)
+      return(0) # there is nothing to extract
     }
     
     plant_tags <- get_tags(plant)
-    extraction_intervals <- create_intervals(max_ts_per_pot, plant_tags, end_date)
-    extract_ianode(plant, extraction_intervals)
+    full_extraction_intervals <- create_intervals(max_ts_per_pot, plant_tags, end_date) %>%
+      mutate(yw = year(start_time) * 100 + week(start_time))
     
-  }) %>% invisible()
+    weekly_extraction_intervals <- full_extraction_intervals %>% group_by(yw)
+    group_walk(weekly_extraction_intervals, function(.x, .y) {
+      extraction_intervals <- as.data.frame(.x)
+      extract_ianode(plant, extraction_intervals) %>%
+        save_buffer_to_spark_table()
+    })
+
+  }) %>%
+    invisible()
   
 
 },
